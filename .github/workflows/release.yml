@@ -1,0 +1,191 @@
+name: Draft release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example, v0.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: draft-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+      tag_object: ${{ steps.resolve.outputs.tag_object }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a version tag such as v0.2.1 or 0.2.1."
+            exit 1
+          fi
+          ref="refs/tags/$TAG"
+          refs=$(git ls-remote --exit-code "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$ref" "$ref^{}")
+          tag_object=$(awk -v ref="$ref" '$2 == ref {print $1}' <<< "$refs")
+          commit=$(awk -v ref="$ref^{}" '$2 == ref {print $1}' <<< "$refs")
+          test -n "$tag_object"
+          {
+            echo "tag_object=$tag_object"
+            echo "commit=${commit:-$tag_object}"
+            echo "version=${TAG#v}"
+          } >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            arch: X64
+            target: windows-x86_64
+            extension: zip
+          - os: ubuntu-24.04
+            arch: X64
+            target: linux-x86_64
+            extension: tar.gz
+          - os: macos-15
+            arch: ARM64
+            target: darwin-arm64
+            extension: tar.gz
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+      PACKAGE: qbloom-${{ needs.tag.outputs.version }}-${{ matrix.target }}
+    steps:
+      - name: Check runner architecture
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.commit }}
+          persist-credentials: false
+      - uses: swift-actions/setup-swift@v3
+        if: runner.os != 'Windows'
+        with:
+          swift-version: "6.4.2"
+      - uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257
+        if: runner.os == 'Windows'
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Build, package and smoke-test Unix CLI
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          DIST_DIR: ${{ runner.temp }}/qbloom-dist
+        run: |
+          sh scripts/package.sh
+          sh scripts/check-package.sh "$DIST_DIR/$PACKAGE.tar.gz"
+      - name: Build, package and smoke-test Windows CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DIST_DIR: ${{ runner.temp }}/qbloom-dist
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.symlinks
+          GIT_CONFIG_VALUE_0: 'false'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual Studio x64 C++ build tools are required.' }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          swift build -c release --product qbloom
+          $products = swift build -c release --show-bin-path
+          $work = Join-Path $env:RUNNER_TEMP 'qbloom-package'
+          $stage = Join-Path $work $env:PACKAGE
+          $bin = Join-Path $stage 'bin'
+          New-Item -ItemType Directory -Path $bin, $env:DIST_DIR | Out-Null
+          Copy-Item -LiteralPath "$products/qbloom.exe", "$products/qbloom_QbloomCLI.bundle" -Destination $bin -Recurse
+          Copy-Item -LiteralPath README.md, README-ko.md, LICENSE, docs -Destination $stage -Recurse
+          Copy-Item -LiteralPath scripts/install.ps1 -Destination "$stage/install.ps1"
+
+          $archive = Join-Path $env:DIST_DIR "$env:PACKAGE.zip"
+          tar.exe -a -cf $archive -C $work $env:PACKAGE
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:PACKAGE.zip" | Set-Content -LiteralPath "$archive.sha256" -Encoding ascii
+
+          $extracted = Join-Path $work 'extracted'
+          $projectDir = Join-Path $work 'smoke projects'
+          New-Item -ItemType Directory -Path $extracted, $projectDir | Out-Null
+          tar.exe -xf $archive -C $extracted
+          $exe = Join-Path $extracted "$env:PACKAGE/bin/qbloom.exe"
+          Set-Location -LiteralPath $projectDir
+          & $exe --help
+          $version = & $exe --version
+          if (!$version.StartsWith("$env:VERSION (x86_64-unknown-windows-msvc,")) {
+            throw "Unexpected packaged version: $version"
+          }
+          & $exe init 'Hello 세계' --cpp --no-git
+          & $exe init python_smoke --python --no-git
+          foreach ($file in @('Hello 세계/qbloom.toml', 'Hello 세계/qml/Main.qml', 'python_smoke/qbloom_app/backend.py')) {
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing scaffold file: $file" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/qbloom-dist/${{ env.PACKAGE }}.${{ matrix.extension }}
+            ${{ runner.temp }}/qbloom-dist/${{ env.PACKAGE }}.${{ matrix.extension }}.sha256
+          if-no-files-found: error
+          overwrite: true
+
+  draft:
+    needs: [tag, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+      - name: Collect verified assets in the tag's draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          TAG_OBJECT: ${{ needs.tag.outputs.tag_object }}
+          VERSION: ${{ needs.tag.outputs.version }}
+        working-directory: assets
+        run: |
+          assets=()
+          for target in windows-x86_64.zip linux-x86_64.tar.gz darwin-arm64.tar.gz; do
+            archive="qbloom-$VERSION-$target"
+            sha256sum --check "$archive.sha256"
+            assets+=("$archive" "$archive.sha256")
+          done
+          ref="refs/tags/$TAG"
+          current=$(git ls-remote --exit-code "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$ref" | cut -f1)
+          if [[ "$current" != "$TAG_OBJECT" ]]; then
+            echo "::error::Tag moved during the build. Run again against the current tag."
+            exit 1
+          fi
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
+            if [[ "$draft" != true ]]; then
+              echo "::error::Release $TAG has already been published."
+              exit 1
+            fi
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
+          gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

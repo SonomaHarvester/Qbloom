@@ -1,0 +1,9 @@
+LIBRARY libqbloom_go.dll
+EXPORTS
+    GoGreeting
+    GoFreeString
+    GoNewState
+    GoDestroyState
+    GoCount
+    GoIncrement
+    GoReset

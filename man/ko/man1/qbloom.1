@@ -1,0 +1,213 @@
+.Dd November 6, 2026
+.Dt QBLOOM 1
+.Os
+.Sh NAME
+.Nm qbloom
+.Nd Qt Quick 프로젝트 생성과 빌드 및 실행과 테스트
+.Sh SYNOPSIS
+.Nm
+.Cm init | in
+.Ar 이름
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar 경로
+.Op Fl -bridge Ar auto|native|ffi
+.Op Fl -qt-dir Ar 경로
+.Op Fl -no-git
+.Op Fl -force
+.Nm
+.Cm override | ovr
+.Ar 이름
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar 경로
+.Op Fl -bridge Ar auto|native|ffi
+.Op Fl -qt-dir Ar 경로
+.Op Fl -no-git
+.Op Fl -force
+.Nm
+.Cm add
+.Ar 이름
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar 경로
+.Op Fl -bridge Ar auto|native|ffi
+.Nm Cm doctor Op Fl -json Op Fl -strict
+.Nm Cm build Op Fl -release Op Fl -verbose
+.Nm Cm run Op Fl -release Op Fl - Ar 애플리케이션-인수 ...
+.Nm Cm test Op Fl -release Op Fl -headless
+.Nm Cm clean
+.Nm Fl -help
+.Nm Fl -version
+.Sh DESCRIPTION
+.Nm
+은 백엔드가 인사말을 제공하고 QML에 카운터가 바인딩된
+Qt 6 / Qt Quick 애플리케이션을 생성합니다.
+CLI는 Swift로 작성되었습니다. 백엔드 플래그는 생성되는
+애플리케이션의
+로직 언어를 선택합니다.
+.Cm doctor ,
+.Cm build ,
+.Cm run ,
+.Cm test ,
+.Cm clean
+은
+.Pa qbloom.toml
+이 있는 디렉터리에서 실행하세요.
+프로젝트 생성에는 Qt SDK가 필요하지 않습니다.
+.Sh COMMANDS
+.Bl -tag -width "override, ovr" -compact
+.It Cm init , in Ar 이름
+새 프로젝트 디렉터리를 만듭니다.
+대상 경로가 이미 있으면 실패합니다.
+기본 백엔드는 C++입니다.
+.It Cm override , ovr Ar 이름
+Y/N 확인 후
+.Nm
+.Cm init
+프로젝트 전체를 초기화합니다.
+사용자가 추가한 파일도 새 프로젝트에서 제거되며,
+기존 프로젝트 전체를 같은 상위 디렉터리에 백업합니다.
+.Cm add
+프로젝트와 일반 디렉터리는 거부합니다.
+.It Cm add Ar 이름
+기존 CMake 프로젝트에 별도의
+.Pa qbloom_quick
+애플리케이션을 추가하고 최상위
+.Pa CMakeLists.txt
+에 연결합니다.
+기존 소스 파일은 보존합니다.
+.Pa qbloom.toml
+이 이미 있으면 거부합니다.
+.It Cm doctor
+필수 도구, 버전, 브리지, 플랫폼 및 해결 방법을
+출력합니다.
+.Fl -json
+은 스크립트용 JSON을 출력하며 상태 값과 해결 방법
+텍스트는 영어로 유지됩니다.
+.Fl -strict
+은 필수 도구가 없거나 호환되지 않으면 실패합니다.
+플랫폼 검증 기록이 없다는 경고만으로는 실패하지
+않습니다.
+.It Cm build
+선택한 백엔드의 빌드 도구로 구성하고 빌드합니다.
+.Fl -release
+는 릴리스 빌드를 선택하고,
+.Fl -verbose
+는 가능한 경우 네이티브 빌드 도구의 자세한 출력을
+켭니다.
+.It Cm run
+필요하면 빌드한 뒤 애플리케이션을 실행합니다.
+.Fl -release
+는 릴리스 빌드를 선택합니다.
+.Dq --
+뒤의 인수는 애플리케이션으로 전달합니다.
+.It Cm test
+백엔드 테스트와 실행 가능한 Qt Quick 스모크 테스트를
+수행합니다.
+.Fl -headless
+는 GUI 테스트에 Qt의 offscreen 플랫폼을 요청합니다.
+디스플레이가 없어 스모크 테스트를 실행할 수 없으면
+건너뛸 수 있으므로
+출력된 결과를 확인하세요.
+.Fl -release
+는 적용 가능한 경우 릴리스 빌드를 선택합니다.
+.It Cm clean
+현재 프로젝트의
+.Pa .qbloom/build
+를 삭제합니다.
+.El
+.Sh SCAFFOLDING OPTIONS
+.Bl -tag -width "-bridge auto|native|ffi" -compact
+.It Fl -cpp , Fl -rust , Fl -go , Fl -swift , Fl -python , Fl -java , Fl -kotlin
+백엔드 하나를 선택합니다.
+동시에 사용할 수 없으며, 생략하면 C++을 선택합니다.
+.It Fl -dir Ar 경로
+프로젝트의 상위 디렉터리를 지정합니다. 기본값은 현재
+디렉터리입니다.
+.It Fl -bridge Ar auto|native|ffi
+통합 방식을 선택합니다.
+.Cm auto
+는 백엔드별 기본 방식을 사용합니다.
+C++, Python, Rust는
+.Cm auto
+또는
+.Cm native
+를 허용합니다.
+Go, Java, Kotlin, Swift는
+.Cm auto
+또는
+.Cm ffi
+를 허용합니다.
+지원하지 않는 조합은 실패합니다.
+.It Fl -qt-dir Ar 경로
+현재 거부됩니다.
+사용자 지정 Qt 설치를 빌드에 사용하려면
+.Ev CMAKE_PREFIX_PATH
+를 설정하세요.
+이 옵션은
+.Cm init
+과
+.Cm override
+의 구문에만 있습니다.
+.It Fl -no-git
+.Cm init
+과
+.Cm override
+에서 허용됩니다.
+현재 생성기는 어느 경우에도 Git을 초기화하지 않습니다.
+.It Fl -force
+현재 거부됩니다.
+확인 후 초기화하려면
+.Cm override
+를 사용하세요.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "UNICODE_PROGRESS_BAR" -compact
+.It Ev LC_ALL , LC_MESSAGES , LANG
+적용되는 로캘이
+.Cm ko_KR
+이면 CLI 안내를 한국어로 표시하고, 그 밖에는 영어로
+표시합니다.
+네이티브 도구 출력은 해당 도구의 언어를 따릅니다.
+.It Ev CMAKE_PREFIX_PATH , Qt6_DIR
+CMake가 사용자 지정 Qt 설치를 찾도록 돕습니다.
+.It Ev QT_QPA_PLATFORM
+Qt 플랫폼 플러그인을 선택합니다.
+.Cm test -headless
+는 테스트 프로세스에서 이를
+.Cm offscreen
+으로 설정합니다.
+.It Ev UNICODE_PROGRESS_BAR
+.Cm true
+또는
+.Cm false
+로 빌드 진행 표시 문자를 선택합니다.
+.It Ev NO_COLOR
+CLI 진단 메시지의 터미널 색상을 끕니다.
+.El
+.Sh FILES
+.Bl -tag -width ".qbloom/build" -compact
+.It Pa qbloom.toml
+스키마 버전 1의 프로젝트 매니페스트입니다.
+백엔드, 브리지, Qt 주 버전 및 빌드 디렉터리를
+기록합니다.
+.It Pa .qbloom/build
+.Cm clean
+으로 삭제하는 빌드 출력입니다.
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+qbloom init hello --python
+cd hello
+qbloom doctor --strict
+qbloom build
+qbloom run
+qbloom test --headless
+
+qbloom add existing-project --rust
+qbloom override hello --cpp
+.Ed
+.Sh SEE ALSO
+qbloom 소스 또는 배포 압축 파일의
+.Pa README-ko.md ,
+.Pa docs/installation.md ,
+.Pa docs/manifest.md ,
+.Pa docs/compatibility.md .

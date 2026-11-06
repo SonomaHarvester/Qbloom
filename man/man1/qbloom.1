@@ -1,0 +1,207 @@
+.Dd November 6, 2026
+.Dt QBLOOM 1
+.Os
+.Sh NAME
+.Nm qbloom
+.Nd create, build, run, and test Qt Quick projects
+.Sh SYNOPSIS
+.Nm
+.Cm init | in
+.Ar name
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar path
+.Op Fl -bridge Ar auto|native|ffi
+.Op Fl -qt-dir Ar path
+.Op Fl -no-git
+.Op Fl -force
+.Nm
+.Cm override | ovr
+.Ar name
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar path
+.Op Fl -bridge Ar auto|native|ffi
+.Op Fl -qt-dir Ar path
+.Op Fl -no-git
+.Op Fl -force
+.Nm
+.Cm add
+.Ar name
+.Op Fl -cpp | -rust | -go | -swift | -python | -java | -kotlin
+.Op Fl -dir Ar path
+.Op Fl -bridge Ar auto|native|ffi
+.Nm Cm doctor Op Fl -json Op Fl -strict
+.Nm Cm build Op Fl -release Op Fl -verbose
+.Nm Cm run Op Fl -release Op Fl - Ar application-args ...
+.Nm Cm test Op Fl -release Op Fl -headless
+.Nm Cm clean
+.Nm Fl -help
+.Nm Fl -version
+.Sh DESCRIPTION
+.Nm
+generates a Qt 6 / Qt Quick application with a backend-provided greeting
+and a QML-bound counter.
+The CLI is written in Swift; the backend flag selects the language of the
+generated application's logic.
+Run
+.Cm doctor ,
+.Cm build ,
+.Cm run ,
+.Cm test ,
+and
+.Cm clean
+from the directory containing
+.Pa qbloom.toml .
+Scaffolding does not require an installed Qt SDK.
+.Sh COMMANDS
+.Bl -tag -width "override, ovr" -compact
+.It Cm init , in Ar name
+Create a new project directory.
+The destination must not already exist.
+The default backend is C++.
+.It Cm override , ovr Ar name
+Reset an existing
+.Nm
+.Cm init
+project after a Y/N prompt.
+The whole project, including user-added files, is replaced.
+The full original project is moved to a sibling backup.
+Projects created with
+.Cm add
+and unrelated directories are rejected.
+.It Cm add Ar name
+Add a separate
+.Pa qbloom_quick
+application to an existing CMake project and connect it to the top-level
+.Pa CMakeLists.txt .
+Existing source files are preserved.
+Projects already containing
+.Pa qbloom.toml
+are rejected.
+.It Cm doctor
+Report required tools, versions, bridge, platform, and fixes.
+.Fl -json
+prints a machine-readable result with stable English status values and
+remediation text.
+.Fl -strict
+returns an error when a required dependency is missing or incompatible;
+an unverified-platform warning alone does not cause failure.
+.It Cm build
+Configure and build using the selected backend.
+.Fl -release
+selects a release build;
+.Fl -verbose
+passes verbose output to native build tools where available.
+.It Cm run
+Build as needed, then launch the application.
+.Fl -release
+selects a release build.
+Arguments after
+.Dq --
+are passed to the application.
+.It Cm test
+Run backend tests and the available Qt Quick smoke test.
+.Fl -headless
+requests an offscreen Qt platform for GUI testing.
+A smoke test that cannot run without a display may be skipped; inspect the
+reported result.
+.Fl -release
+selects a release build where applicable.
+.It Cm clean
+Remove
+.Pa .qbloom/build
+from the current project.
+.El
+.Sh SCAFFOLDING OPTIONS
+.Bl -tag -width "-bridge auto|native|ffi" -compact
+.It Fl -cpp , Fl -rust , Fl -go , Fl -swift , Fl -python , Fl -java , Fl -kotlin
+Choose one backend.
+The flags are mutually exclusive; omitting them selects C++.
+.It Fl -dir Ar path
+Use
+.Ar path
+as the parent directory; the default is the current directory.
+.It Fl -bridge Ar auto|native|ffi
+Choose an integration mode.
+.Cm auto
+selects the backend default.
+C++, Python, and Rust accept
+.Cm auto
+or
+.Cm native ;
+Go, Java, Kotlin, and Swift accept
+.Cm auto
+or
+.Cm ffi .
+Unsupported combinations fail.
+.It Fl -qt-dir Ar path
+Currently rejected.
+Set
+.Ev CMAKE_PREFIX_PATH
+when building with a custom Qt installation.
+This option is only accepted syntactically by
+.Cm init
+and
+.Cm override .
+.It Fl -no-git
+Accepted by
+.Cm init
+and
+.Cm override ;
+the current scaffolder does not initialize Git in either case.
+.It Fl -force
+Currently rejected.
+Use
+.Cm override
+for a confirmed reset.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "UNICODE_PROGRESS_BAR" -compact
+.It Ev LC_ALL , LC_MESSAGES , LANG
+The CLI displays Korean guidance when the effective locale is
+.Cm ko_KR ;
+otherwise it uses English.
+Native tools retain their own language.
+.It Ev CMAKE_PREFIX_PATH , Qt6_DIR
+Help CMake locate a custom Qt installation.
+.It Ev QT_QPA_PLATFORM
+Selects the Qt platform plugin.
+.Cm test -headless
+sets it to
+.Cm offscreen
+for the test process.
+.It Ev UNICODE_PROGRESS_BAR
+Set to
+.Cm true
+or
+.Cm false
+to control the build progress glyphs.
+.It Ev NO_COLOR
+Disable terminal color in CLI diagnostics.
+.El
+.Sh FILES
+.Bl -tag -width ".qbloom/build" -compact
+.It Pa qbloom.toml
+Generated project manifest, schema version 1.
+It records the backend, bridge, Qt major version, and build directory.
+.It Pa .qbloom/build
+Build output removed by
+.Cm clean .
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+qbloom init hello --python
+cd hello
+qbloom doctor --strict
+qbloom build
+qbloom run
+qbloom test --headless
+
+qbloom add existing-project --rust
+qbloom override hello --cpp
+.Ed
+.Sh SEE ALSO
+.Pa README.md ,
+.Pa docs/installation.md ,
+.Pa docs/manifest.md ,
+.Pa docs/compatibility.md
+in the qbloom source or release archive.

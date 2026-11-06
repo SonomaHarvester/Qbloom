@@ -1,0 +1,276 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - run: swift build
+      - run: swift test
+      - run: swift format lint --strict --recursive Sources Tests
+      - run: swift build -c release
+      - run: .build/release/qbloom --help
+      - run: make install PREFIX="$RUNNER_TEMP/qbloom-prefix"
+      - run: sh scripts/check-install.sh "$RUNNER_TEMP/qbloom-prefix/bin/qbloom"
+      - run: sh scripts/check-install-rollback.sh
+      - run: env DIST_DIR="$RUNNER_TEMP/qbloom-dist" make package
+      - run: sh scripts/check-package.sh "$RUNNER_TEMP"/qbloom-dist/qbloom-*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qbloom-${{ matrix.os }}
+          path: ${{ runner.temp }}/qbloom-dist/*.tar.gz*
+          if-no-files-found: error
+  cpp-quick:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_sample
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_sample
+      - run: ../.build/release/qbloom build
+        working-directory: ci_sample
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_sample
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: ci_sample
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir cpp_existing
+      - run: .build/release/qbloom add cpp_existing --cpp
+      - run: ../.build/release/qbloom test --headless
+        working-directory: cpp_existing
+  python-quick:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install EGL runtime on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
+      - run: python -m pip install PySide6==6.11.2
+      - run: swift build -c release
+      - run: .build/release/qbloom init py_sample --python
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: py_sample
+      - run: ../.build/release/qbloom build
+        working-directory: py_sample
+      - run: ../.build/release/qbloom test --headless
+        working-directory: py_sample
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: py_sample
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir py_existing
+      - run: .build/release/qbloom add py_existing --python
+      - run: ../.build/release/qbloom test --headless
+        working-directory: py_existing
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - run: rustup toolchain install 1.98.1 --profile minimal
+      - run: rustup default 1.98.1
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_rust --rust
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_rust
+      - run: ../.build/release/qbloom build
+        working-directory: ci_rust
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_rust
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: ci_rust
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir rust_existing
+      - run: .build/release/qbloom add rust_existing --rust
+      - run: ../.build/release/qbloom test --headless
+        working-directory: rust_existing
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.10"
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_go --go
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_go
+      - run: ../.build/release/qbloom build
+        working-directory: ci_go
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_go
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: ci_go
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir go_existing
+      - run: .build/release/qbloom add go_existing --go
+      - run: ../.build/release/qbloom test --headless
+        working-directory: go_existing
+  java:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.0"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_java --java
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_java
+      - run: ../.build/release/qbloom build
+        working-directory: ci_java
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_java
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: ci_java
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir java_existing
+      - run: .build/release/qbloom add java_existing --java
+      - run: ../.build/release/qbloom test --headless
+        working-directory: java_existing
+  kotlin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.0"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_kotlin --kotlin
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_kotlin
+      - run: ../.build/release/qbloom build
+        working-directory: ci_kotlin
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_kotlin
+      - run: ../.build/release/qbloom run -- --smoke-test
+        working-directory: ci_kotlin
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+      - run: mkdir kotlin_existing
+      - run: .build/release/qbloom add kotlin_existing --kotlin
+      - run: ../.build/release/qbloom test --headless
+        working-directory: kotlin_existing
+  swift:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4.2"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.os == 'macos-15' && '6.11.2' || '6.8.3' }}
+          install-deps: true
+      - run: swift build -c release
+      - run: .build/release/qbloom init ci_swift --swift
+      - run: ../.build/release/qbloom doctor --strict
+        working-directory: ci_swift
+      - run: ../.build/release/qbloom build
+        working-directory: ci_swift
+      - run: ../.build/release/qbloom test --headless
+        working-directory: ci_swift
+        env:
+          QSG_INFO: "1"
+      - run: mkdir swift_existing
+      - run: .build/release/qbloom add swift_existing --swift
+      - run: ../.build/release/qbloom test --headless
+        working-directory: swift_existing
